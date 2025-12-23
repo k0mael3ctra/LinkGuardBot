@@ -40,6 +40,7 @@ def test_gsb_hit_sets_high(monkeypatch) -> None:
     monkeypatch.setattr(threat_feeds, "check_url", fake_feed)
     monkeypatch.setattr(http_fetch, "safe_fetch", fake_fetch)
 
-    report = asyncio.run(analyze_url("https://example.com", None, "fake", None, None))
+    report = asyncio.run(analyze_url("https://example.com", None, "fake", None))
     assert report.risk_level == "HIGH"
     assert "Google Safe Browsing: обнаружены угрозы." in report.reasons
+
