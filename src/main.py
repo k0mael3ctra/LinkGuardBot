@@ -33,6 +33,7 @@ async def main() -> None:
             BotCommand(command="about", description="Как работает проверка"),
             BotCommand(command="history", description="Последние проверки"),
             BotCommand(command="groupmode", description="Режим группы"),
+            BotCommand(command="stats", description="Статистика (админ)"),
             BotCommand(command="quiz", description="Мини-викторина"),
         ]
     )

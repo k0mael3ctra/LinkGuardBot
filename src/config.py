@@ -14,11 +14,23 @@ class Settings:
     google_safe_browsing_api_key: str | None
     urlscan_api_key: str | None
     group_mode: str
+    admin_ids: set[int]
 
 
 def _load_env() -> None:
     root = Path(__file__).resolve().parents[1]
     load_dotenv(root / ".env")
+
+
+def _parse_admin_ids(raw: str) -> set[int]:
+    ids: set[int] = set()
+    for part in raw.split(","):
+        value = part.strip()
+        if not value:
+            continue
+        if value.isdigit():
+            ids.add(int(value))
+    return ids
 
 
 def get_settings() -> Settings:
@@ -32,10 +44,12 @@ def get_settings() -> Settings:
     group_mode = os.getenv("GROUP_MODE", "quiet").strip().lower()
     if group_mode not in {"quiet", "active"}:
         group_mode = "quiet"
+    admin_ids = _parse_admin_ids(os.getenv("ADMIN_IDS", ""))
     return Settings(
         bot_token=token,
         vt_api_key=vt_key,
         google_safe_browsing_api_key=gsb_key,
         urlscan_api_key=urlscan_key,
         group_mode=group_mode,
+        admin_ids=admin_ids,
     )

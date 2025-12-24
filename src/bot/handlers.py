@@ -6,17 +6,19 @@ import time
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, FSInputFile
 
 from ..config import get_settings
 from ..education import get_quiz_question, tips_text
 from ..risk_engine import analyze_url
+from .analytics import format_metrics, get_metrics, log_event, write_metrics_csv
 from .group_mode_store import get_mode, set_mode
 from .history_store import add_item, get_items, HistoryItem
 from .keyboards import quiz_keyboard
 
 router = Router()
 settings = get_settings()
+ADMIN_ID = 1938158970
 
 MAX_MESSAGE = 3500
 MAX_AUTO_URLS = 3
@@ -131,7 +133,16 @@ def _extract_urls(text: str) -> list[str]:
     return found
 
 
-async def _send_report(message: Message, raw_url: str, deepcheck: bool = False) -> None:
+def _is_admin(user_id: int | None, chat_type: str) -> bool:
+    return bool(user_id) and user_id == ADMIN_ID
+
+
+async def _send_report(
+    message: Message,
+    raw_url: str,
+    deepcheck: bool = False,
+    event_type: str = "check",
+) -> None:
     logging.info("Checking URL: %s", raw_url)
     try:
         report = await analyze_url(
@@ -143,8 +154,11 @@ async def _send_report(message: Message, raw_url: str, deepcheck: bool = False) 
         )
     except Exception as exc:
         logging.exception("Check failed")
+        log_event(message.from_user.id, f"{event_type}_error", message.chat.type)
         await message.answer(f"Не удалось проверить ссылку: {exc}")
         return
+
+    log_event(message.from_user.id, event_type, message.chat.type)
 
     await add_item(
         message.from_user.id,
@@ -163,6 +177,7 @@ async def _send_report(message: Message, raw_url: str, deepcheck: bool = False) 
 
 @router.message(Command("start"))
 async def cmd_start(message: Message) -> None:
+    log_event(message.from_user.id, "start", message.chat.type)
     text = (
         "LinkGuard - бот для проверки ссылок в Telegram.\n"
         "Отправь ссылку или используй /check. В группах авто-проверка работает в режиме active (/groupmode).\n"
@@ -183,6 +198,7 @@ async def cmd_help(message: Message) -> None:
         "/about - как устроена проверка\n"
         "/history - последние проверки\n"
         "/groupmode quiet|active - режим группы\n"
+        "/stats [csv] - статистика (владелец)\n"
         "/quiz - мини-викторина\n\n"
         "В личке можно просто отправлять ссылку.\n"
         "В группах авто-проверка работает только в режиме active."
@@ -260,6 +276,21 @@ async def cmd_groupmode(message: Message, command: CommandObject) -> None:
     await message.answer(f"Режим группы установлен: {arg}")
 
 
+@router.message(Command("stats"))
+async def cmd_stats(message: Message, command: CommandObject) -> None:
+    if not _is_admin(message.from_user.id, message.chat.type):
+        await message.answer("Нет доступа. Команда доступна только владельцу.")
+        return
+
+    metrics = get_metrics()
+    await message.answer(format_metrics(metrics))
+
+    args = (command.args or "").strip().lower()
+    if args in {"csv", "file"}:
+        path = write_metrics_csv(metrics)
+        await message.answer_document(FSInputFile(path), caption="metrics.csv")
+
+
 @router.message(Command("quiz"))
 async def cmd_quiz(message: Message) -> None:
     question = get_quiz_question(0)
@@ -307,7 +338,7 @@ async def cmd_check(message: Message, command: CommandObject) -> None:
         return
 
     raw_url = command.args.strip()
-    await _send_report(message, raw_url)
+    await _send_report(message, raw_url, event_type="check")
 
 
 @router.message(Command("deepcheck"))
@@ -317,7 +348,7 @@ async def cmd_deepcheck(message: Message, command: CommandObject) -> None:
         return
 
     raw_url = command.args.strip()
-    await _send_report(message, raw_url, deepcheck=True)
+    await _send_report(message, raw_url, deepcheck=True, event_type="deepcheck")
 
 
 @router.message(F.text)
@@ -337,4 +368,4 @@ async def auto_check(message: Message) -> None:
     if len(urls) > MAX_AUTO_URLS:
         await message.answer("Нашел много ссылок, проверю первые три.")
     for raw_url in urls[:MAX_AUTO_URLS]:
-        await _send_report(message, raw_url)
+        await _send_report(message, raw_url, event_type="auto_check")

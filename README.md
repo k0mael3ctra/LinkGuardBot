@@ -91,6 +91,7 @@ python -m src.main
 - `/tips` - советы
 - `/about` - как работает проверка
 - `/history` - последние проверки
+- `/stats [csv]` - статистика (владелец)
 - `/groupmode quiet|active` - режим группы
 - `/quiz` - мини-викторина
 
