@@ -95,6 +95,11 @@ python -m src.main
 - `/groupmode quiet|active` - режим группы
 - `/quiz` - мини-викторина
 
+## Хранилище
+
+Бот хранит историю проверок, режимы групп и события для статистики в SQLite: `data/linkguard.sqlite`.
+Файлы в `data/` игнорируются Git и создаются при первом запуске. Для “сброса” можно остановить бота и удалить `data/linkguard.sqlite`.
+
 ## 10) Troubleshooting
 
 - **requirements.txt not found**: не та папка

@@ -3,10 +3,9 @@
 import csv
 from dataclasses import dataclass
 from pathlib import Path
-import sqlite3
 import time
 
-DB_PATH = Path(__file__).resolve().parents[2] / "data" / "analytics.sqlite"
+from . import db
 
 
 @dataclass
@@ -24,37 +23,11 @@ class Metrics:
     generated_at: float
 
 
-def _connect() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-    return conn
-
-
-def _init_db(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts REAL NOT NULL,
-            user_id INTEGER NOT NULL,
-            event TEXT NOT NULL,
-            chat_type TEXT NOT NULL
-        )
-        """
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_events_user ON events(user_id)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_events_event ON events(event)")
-    conn.commit()
-
-
 def log_event(user_id: int | None, event: str, chat_type: str | None) -> None:
     if not user_id or not event:
         return
-    with _connect() as conn:
-        _init_db(conn)
+    with db.connect() as conn:
+        db.ensure_db(conn)
         conn.execute(
             "INSERT INTO events (ts, user_id, event, chat_type) VALUES (?, ?, ?, ?)",
             (time.time(), int(user_id), event, chat_type or "unknown"),
@@ -62,7 +35,7 @@ def log_event(user_id: int | None, event: str, chat_type: str | None) -> None:
         conn.commit()
 
 
-def _count(conn: sqlite3.Connection, query: str, params: tuple = ()) -> int:
+def _count(conn, query: str, params: tuple = ()) -> int:
     cur = conn.execute(query, params)
     row = cur.fetchone()
     return int(row[0]) if row and row[0] is not None else 0
@@ -73,8 +46,8 @@ def _since(days: int) -> float:
 
 
 def get_metrics() -> Metrics:
-    with _connect() as conn:
-        _init_db(conn)
+    with db.connect() as conn:
+        db.ensure_db(conn)
         total_events = _count(conn, "SELECT COUNT(*) FROM events")
         total_users = _count(conn, "SELECT COUNT(DISTINCT user_id) FROM events")
         total_checks = _count(
@@ -122,7 +95,7 @@ def format_metrics(metrics: Metrics) -> str:
 
 
 def write_metrics_csv(metrics: Metrics) -> Path:
-    path = DB_PATH.parent / "metrics.csv"
+    path = db.DB_PATH.parent / "metrics.csv"
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(["metric", "value"])

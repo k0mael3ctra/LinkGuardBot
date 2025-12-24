@@ -1,10 +1,9 @@
 ﻿from __future__ import annotations
 
 import asyncio
-import json
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
+
+from . import db
 
 
 @dataclass
@@ -20,53 +19,52 @@ MAX_ITEMS_PER_USER = 20
 _lock = asyncio.Lock()
 
 
-def _history_path() -> Path:
-    root = Path(__file__).resolve().parents[2]
-    path = root / "data"
-    path.mkdir(parents=True, exist_ok=True)
-    return path / "history.json"
+def _add_item_sync(user_id: int, item: HistoryItem) -> None:
+    with db.connect() as conn:
+        db.ensure_db(conn)
+        conn.execute(
+            "INSERT INTO history (ts, user_id, url, risk_level, risk_score) VALUES (?, ?, ?, ?, ?)",
+            (float(item.timestamp), int(user_id), item.url, item.risk_level, int(item.risk_score)),
+        )
+        conn.execute(
+            """
+            DELETE FROM history
+            WHERE id IN (
+                SELECT id FROM history
+                WHERE user_id = ?
+                ORDER BY ts DESC
+                LIMIT -1 OFFSET ?
+            )
+            """,
+            (int(user_id), MAX_ITEMS_PER_USER),
+        )
+        conn.commit()
 
 
-def _load_raw() -> dict[str, list[dict[str, Any]]]:
-    path = _history_path()
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-
-def _save_raw(data: dict[str, list[dict[str, Any]]]) -> None:
-    _history_path().write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+def _get_items_sync(user_id: int, limit: int) -> list[HistoryItem]:
+    with db.connect() as conn:
+        db.ensure_db(conn)
+        cur = conn.execute(
+            "SELECT url, risk_level, risk_score, ts FROM history WHERE user_id = ? ORDER BY ts DESC LIMIT ?",
+            (int(user_id), int(limit)),
+        )
+        rows = cur.fetchall() or []
+        return [
+            HistoryItem(
+                url=str(row[0] or ""),
+                risk_level=str(row[1] or ""),
+                risk_score=int(row[2] or 0),
+                timestamp=float(row[3] or 0),
+            )
+            for row in rows
+        ]
 
 
 async def add_item(user_id: int, item: HistoryItem) -> None:
     async with _lock:
-        data = _load_raw()
-        key = str(user_id)
-        items = data.get(key, [])
-        items.insert(0, {
-            "url": item.url,
-            "risk_level": item.risk_level,
-            "risk_score": item.risk_score,
-            "timestamp": item.timestamp,
-        })
-        data[key] = items[:MAX_ITEMS_PER_USER]
-        _save_raw(data)
+        await asyncio.to_thread(_add_item_sync, user_id, item)
 
 
 async def get_items(user_id: int, limit: int = 5) -> list[HistoryItem]:
     async with _lock:
-        data = _load_raw()
-        key = str(user_id)
-        items = data.get(key, [])[:limit]
-        return [
-            HistoryItem(
-                url=item.get("url", ""),
-                risk_level=item.get("risk_level", ""),
-                risk_score=int(item.get("risk_score", 0)),
-                timestamp=float(item.get("timestamp", 0)),
-            )
-            for item in items
-        ]
+        return await asyncio.to_thread(_get_items_sync, user_id, limit)
