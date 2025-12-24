@@ -58,7 +58,7 @@ async def _with_timeout(coro: Any, label: str, timeout: float) -> tuple[str, Any
         return "ok", result
     except asyncio.TimeoutError:
         return "timeout", f"{label}: таймаут."
-    except Exception as exc:
+    except Exception:
         return "error", f"{label}: ошибка."
 
 
@@ -199,5 +199,6 @@ async def analyze_url(
         intel=intel,
         unavailable=unavailable,
     )
+
 
 

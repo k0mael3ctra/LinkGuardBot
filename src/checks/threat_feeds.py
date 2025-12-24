@@ -43,7 +43,6 @@ class FeedConfig:
 
 FEEDS = [
     FeedConfig(name="URLhaus", url="https://urlhaus.abuse.ch/downloads/text/"),
-    FeedConfig(name="OpenPhish", url="https://openphish.com/feed.txt"),
 ]
 
 

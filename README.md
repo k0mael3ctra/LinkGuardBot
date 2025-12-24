@@ -133,12 +133,11 @@ git push -u origin main
 
 Используются источники и сервисы:
 - URLhaus (malware)
-- OpenPhish (phishing)
 - Google Safe Browsing (репутация)
 - VirusTotal (репутация)
 - urlscan.io (онлайн-анализ)
 
-Фиды кешируются локально в `data/feeds` и обновляются автоматически.
+Фид URLhaus кешируется локально в `data/feeds` и обновляется автоматически.
 `urlscan.io` запускается при высоком риске или по команде `/deepcheck`.
 
 ---
