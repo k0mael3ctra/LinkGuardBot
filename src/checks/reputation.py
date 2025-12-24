@@ -21,17 +21,19 @@ class ReputationResult:
 def _format_detail(malicious: int, suspicious: int, total: int, categories: list[str], tags: list[str]) -> str:
     detected = malicious + suspicious
     ratio = f"{detected}/{total}" if total else "0/0"
-    parts = [f"VirusTotal: detections {ratio} (malicious={malicious}, suspicious={suspicious})."]
+    parts = [
+        f"VirusTotal: срабатывания {ratio} (вредоносные={malicious}, подозрительные={suspicious})."
+    ]
     if categories:
-        parts.append("Categories: " + ", ".join(categories[:3]) + ".")
+        parts.append("Категории: " + ", ".join(categories[:3]) + ".")
     if tags:
-        parts.append("Tags: " + ", ".join(tags[:4]) + ".")
+        parts.append("Теги: " + ", ".join(tags[:4]) + ".")
     return " ".join(parts)
 
 
 async def check_reputation(url: str, api_key: str | None) -> ReputationResult:
     if not api_key:
-        return ReputationResult(status="not_configured", detail="VirusTotal: not configured (optional).")
+        return ReputationResult(status="not_configured", detail="VirusTotal: не настроено (опционально).")
 
     url_id = base64.urlsafe_b64encode(url.encode()).decode().strip("=")
     endpoint = f"https://www.virustotal.com/api/v3/urls/{url_id}"
@@ -44,12 +46,12 @@ async def check_reputation(url: str, api_key: str | None) -> ReputationResult:
                 if resp.status == 404:
                     return ReputationResult(
                         status="clean",
-                        detail="VirusTotal: not found (maybe needs analysis).",
+                        detail="VirusTotal: данных нет (нужен анализ).",
                     )
                 if resp.status == 429:
-                    return ReputationResult(status="error", detail="VirusTotal: rate limit, try later.")
+                    return ReputationResult(status="error", detail="VirusTotal: лимит запросов, попробуйте позже.")
                 if resp.status != 200:
-                    return ReputationResult(status="error", detail=f"VirusTotal: error {resp.status}.")
+                    return ReputationResult(status="error", detail=f"VirusTotal: ошибка {resp.status}.")
 
                 data = await resp.json()
                 attrs = data.get("data", {}).get("attributes", {})
@@ -73,6 +75,6 @@ async def check_reputation(url: str, api_key: str | None) -> ReputationResult:
                     total=total,
                 )
     except asyncio.TimeoutError:
-        return ReputationResult(status="error", detail="VirusTotal: timeout.")
+        return ReputationResult(status="error", detail="VirusTotal: таймаут.")
     except aiohttp.ClientError:
-        return ReputationResult(status="error", detail="VirusTotal: network error.")
+        return ReputationResult(status="error", detail="VirusTotal: ошибка сети.")

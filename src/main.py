@@ -28,6 +28,7 @@ async def main() -> None:
             BotCommand(command="start", description="Старт и возможности"),
             BotCommand(command="help", description="Список команд"),
             BotCommand(command="check", description="Проверка ссылки"),
+            BotCommand(command="deepcheck", description="Углубленная проверка"),
             BotCommand(command="tips", description="Советы по безопасности"),
             BotCommand(command="about", description="Как работает проверка"),
             BotCommand(command="history", description="Последние проверки"),

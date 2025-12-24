@@ -50,10 +50,10 @@ def _risk_emoji(level: str) -> str:
 
 def _interpretation(level: str) -> str:
     if level == "HIGH":
-        return "Высокий риск: есть сильные сигналы угрозы или совпадения в базах."
+        return "Высокий риск: есть подтвержденные сигналы угрозы или совпадения в базах."
     if level == "MEDIUM":
-        return "Средний риск: есть признаки подозрительности, нужна осторожность."
-    return "Низкий риск: явных признаков угроз не найдено, но осторожность все равно важна."
+        return "Средний риск: есть подозрительные признаки, нужна осторожность."
+    return "Низкий риск: по текущим проверкам угроз не обнаружено."
 
 
 def _format_report(report) -> str:
@@ -72,6 +72,9 @@ def _format_report(report) -> str:
     intel = "\n".join(f"- {item}" for item in report.intel)
     reasons = "\n".join(f"- {r}" for r in report.reasons)
     technical = "\n".join(f"- {t}" for t in report.technical)
+    unavailable = ""
+    if report.unavailable:
+        unavailable = "Не удалось проверить\n" + "\n".join(f"- {item}" for item in report.unavailable) + "\n\n"
     how = "\n".join(
         [
             "- Структура URL",
@@ -80,7 +83,7 @@ def _format_report(report) -> str:
             "- Анализ контента страницы",
             "- Базы угроз (URLhaus/OpenPhish)",
             "- Репутация (Google Safe Browsing / VirusTotal)",
-            "- Онлайн-скан (urlscan.io)",
+            "- Онлайн-скан (urlscan.io при высоком риске или /deepcheck)",
         ]
     )
     interpretation = _interpretation(report.risk_level)
@@ -90,6 +93,7 @@ def _format_report(report) -> str:
         f"Интерпретация\n{interpretation}\n\n"
         f"URL\n" + "\n".join(url_lines) + "\n\n"
         f"Источники\n{intel}\n\n"
+        f"{unavailable}"
         f"Признаки риска\n{reasons}\n\n"
         f"Техническое\n{technical}\n\n"
         f"Как мы это проверили\n{how}"
@@ -127,7 +131,7 @@ def _extract_urls(text: str) -> list[str]:
     return found
 
 
-async def _send_report(message: Message, raw_url: str) -> None:
+async def _send_report(message: Message, raw_url: str, deepcheck: bool = False) -> None:
     logging.info("Checking URL: %s", raw_url)
     try:
         report = await analyze_url(
@@ -135,6 +139,7 @@ async def _send_report(message: Message, raw_url: str) -> None:
             settings.vt_api_key,
             settings.google_safe_browsing_api_key,
             settings.urlscan_api_key,
+            deepcheck=deepcheck,
         )
     except Exception as exc:
         logging.exception("Check failed")
@@ -159,7 +164,7 @@ async def _send_report(message: Message, raw_url: str) -> None:
 @router.message(Command("start"))
 async def cmd_start(message: Message) -> None:
     text = (
-        "LinkGuard — практичный Telegram-бот для проверки ссылок.\n"
+        "LinkGuard - практичный Telegram-бот для проверки ссылок.\n"
         "Работает в личных и групповых чатах: можно отправлять ссылку прямо в чат без /check.\n"
         "Проверки: эвристики URL, защитные заголовки, безопасный HTTP и публичные фиды угроз."
     )
@@ -173,6 +178,7 @@ async def cmd_help(message: Message) -> None:
         "/start - приветствие\n"
         "/help - помощь\n"
         "/check URL - анализ ссылки\n"
+        "/deepcheck URL - углубленная проверка (urlscan.io)\n"
         "/tips - советы по безопасности\n"
         "/about - как работает проверка\n"
         "/history - последние проверки\n"
@@ -190,29 +196,29 @@ async def cmd_help(message: Message) -> None:
 async def cmd_about(message: Message) -> None:
     text = (
         "Как работает LinkGuard (подробно и по делу):\n\n"
-        "1) Эвристики URL — это проверка формы ссылки.\n"
+        "1) Эвристики URL - это проверка формы ссылки.\n"
         "   Мы смотрим длину домена, символ @, поддомены, redirect-параметры.\n"
         "   Это помогает ловить маскировку, когда мошенники прячут реальный адрес в структуре.\n\n"
-        "2) HTTP Security Headers — это защитные настройки сайта.\n"
+        "2) HTTP Security Headers - это защитные настройки сайта.\n"
         "   HSTS: заставляет работать только по HTTPS.\n"
         "   CSP: ограничивает запуск скриптов.\n"
         "   X-Frame-Options: защищает от подмены через фреймы.\n"
         "   X-Content-Type-Options: запрещает опасные догадки о типе файла.\n"
         "   Referrer-Policy: скрывает лишнюю информацию о переходе.\n"
-        "   Если заголовков нет — это не вирус, но защита слабее, риск выше.\n\n"
-        "3) Безопасный HTTP — это правила безопасности для самого бота.\n"
+        "   Если заголовков нет - это не вирус, но защита слабее, риск выше.\n\n"
+        "3) Безопасный HTTP - это правила безопасности для самого бота.\n"
         "   Мы ставим таймауты, ограничиваем редиректы и блокируем localhost/приватные IP.\n"
         "   Это нужно, чтобы бот не стал инструментом атаки и не зависал на запросах.\n\n"
-        "4) Публичные базы угроз — это известные списки вредоносных ссылок.\n"
-        "   URLhaus — malware; OpenPhish — фишинг.\n"
-        "   VirusTotal и Google Safe Browsing — репутация от множества источников.\n"
+        "4) Публичные базы угроз - это известные списки вредоносных ссылок.\n"
+        "   URLhaus - malware; OpenPhish - фишинг.\n"
+        "   VirusTotal и Google Safe Browsing - репутация от множества источников.\n"
         "   Если URL найден в базе, риск автоматически высокий.\n\n"
         "5) Анализ содержимого страницы (если доступно).\n"
         "   Ищем формы ввода, поля пароля и отправку данных на другой домен.\n"
         "   Это признак фишинга, когда сайт пытается украсть логин/пароль.\n\n"
-        "6) Итоговый риск — это сумма сигналов.\n"
+        "6) Итоговый риск - это сумма сигналов.\n"
         "   Эвристики + заголовки + базы угроз + контент дают общий риск-уровень.\n"
-        "   Это вероятностная оценка, а не приговор — думай, но относись осторожно."
+        "   Это вероятностная оценка, а не приговор - думай, но относись осторожно."
     )
     await message.answer(text)
 
@@ -230,7 +236,7 @@ async def cmd_history(message: Message) -> None:
         return
     lines = []
     for item in items:
-        lines.append(f"{_risk_emoji(item.risk_level)} {item.risk_level} {item.risk_score}/100 — {item.url}")
+        lines.append(f"{_risk_emoji(item.risk_level)} {item.risk_level} {item.risk_score}/100 - {item.url}")
     await message.answer("Последние проверки:\n" + "\n".join(lines))
 
 
@@ -311,6 +317,16 @@ async def cmd_check(message: Message, command: CommandObject) -> None:
 
     raw_url = command.args.strip()
     await _send_report(message, raw_url)
+
+
+@router.message(Command("deepcheck"))
+async def cmd_deepcheck(message: Message, command: CommandObject) -> None:
+    if not command.args:
+        await message.answer("Использование: /deepcheck URL\nПример: /deepcheck https://example.com")
+        return
+
+    raw_url = command.args.strip()
+    await _send_report(message, raw_url, deepcheck=True)
 
 
 @router.message(F.text)

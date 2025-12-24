@@ -28,11 +28,11 @@ async def scan_url(url: str, api_key: str | None) -> UrlscanResult:
     if not api_key:
         return UrlscanResult(
             status="not_configured",
-            detail="urlscan.io: not configured.",
+            detail="urlscan.io: не настроено.",
             result_url=None,
         )
 
-    payload = {"url": url, "visibility": "public"}
+    payload = {"url": url, "visibility": "private"}
     timeout = aiohttp.ClientTimeout(total=TIMEOUT_SECONDS)
 
     for attempt in range(2):
@@ -45,7 +45,7 @@ async def scan_url(url: str, api_key: str | None) -> UrlscanResult:
                     if resp.status != 200:
                         return UrlscanResult(
                             status="error",
-                            detail=f"urlscan.io: error {resp.status}.",
+                            detail=f"urlscan.io: ошибка {resp.status}.",
                             result_url=None,
                         )
                     data = await resp.json()
@@ -54,7 +54,7 @@ async def scan_url(url: str, api_key: str | None) -> UrlscanResult:
                     if not uuid:
                         return UrlscanResult(
                             status="error",
-                            detail="urlscan.io: invalid response.",
+                            detail="urlscan.io: неверный ответ.",
                             result_url=None,
                         )
 
@@ -63,7 +63,7 @@ async def scan_url(url: str, api_key: str | None) -> UrlscanResult:
                         if result_resp.status == 200:
                             return UrlscanResult(
                                 status="ready",
-                                detail="urlscan.io: отчет доступен.",
+                                detail="urlscan.io: отчет готов.",
                                 result_url=result_url or _result_endpoint(uuid),
                             )
                         return UrlscanResult(
@@ -75,11 +75,11 @@ async def scan_url(url: str, api_key: str | None) -> UrlscanResult:
             if attempt == 0:
                 await asyncio.sleep(RETRY_BACKOFF_SECONDS)
                 continue
-            return UrlscanResult(status="error", detail="urlscan.io: timeout.", result_url=None)
+            return UrlscanResult(status="error", detail="urlscan.io: таймаут.", result_url=None)
         except aiohttp.ClientError:
             if attempt == 0:
                 await asyncio.sleep(RETRY_BACKOFF_SECONDS)
                 continue
-            return UrlscanResult(status="error", detail="urlscan.io: network error.", result_url=None)
+            return UrlscanResult(status="error", detail="urlscan.io: ошибка сети.", result_url=None)
 
-    return UrlscanResult(status="error", detail="urlscan.io: unknown error.", result_url=None)
+    return UrlscanResult(status="error", detail="urlscan.io: неизвестная ошибка.", result_url=None)

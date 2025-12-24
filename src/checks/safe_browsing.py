@@ -10,7 +10,9 @@ from . import url_utils
 TIMEOUT_SECONDS = 8
 RETRY_BACKOFF_SECONDS = 0.6
 CACHE_TTL_SECONDS = 30 * 60
+ERROR_CACHE_TTL_SECONDS = 3 * 60
 MAX_URL_LENGTH = 2048
+MAX_CACHE_ITEMS = 2000
 
 THREAT_TYPES = [
     "MALWARE",
@@ -37,7 +39,7 @@ class SafeBrowsingResult:
     detail: str
 
 
-_cache: dict[str, tuple[float, SafeBrowsingResult]] = {}
+_cache: dict[str, tuple[float, float, SafeBrowsingResult]] = {}
 
 
 def _endpoint(api_key: str) -> str:
@@ -53,16 +55,21 @@ def _cache_get(key: str) -> SafeBrowsingResult | None:
     cached = _cache.get(key)
     if not cached:
         return None
-    ts, result = cached
-    if now - ts > CACHE_TTL_SECONDS:
+    ts, ttl, result = cached
+    if now - ts > ttl:
         _cache.pop(key, None)
         return None
     return result
 
 
-def _cache_set(key: str, result: SafeBrowsingResult) -> None:
+def _cache_set(key: str, result: SafeBrowsingResult, ttl: float = CACHE_TTL_SECONDS) -> None:
     now = asyncio.get_running_loop().time()
-    _cache[key] = (now, result)
+    if key in _cache:
+        _cache.pop(key, None)
+    _cache[key] = (now, ttl, result)
+    while len(_cache) > MAX_CACHE_ITEMS:
+        oldest = next(iter(_cache))
+        _cache.pop(oldest, None)
 
 
 def _label_threats(threats: list[str]) -> str:
@@ -82,7 +89,7 @@ async def check_url(url: str, api_key: str | None) -> SafeBrowsingResult:
         return SafeBrowsingResult(
             status="not_configured",
             threats=[],
-            detail="Google Safe Browsing: not configured.",
+            detail="Google Safe Browsing: не настроено.",
         )
 
     try:
@@ -91,7 +98,7 @@ async def check_url(url: str, api_key: str | None) -> SafeBrowsingResult:
         return SafeBrowsingResult(
             status="error",
             threats=[],
-            detail="Google Safe Browsing: invalid URL.",
+            detail="Google Safe Browsing: некорректный URL.",
         )
 
     if len(normalized) > MAX_URL_LENGTH:
@@ -125,9 +132,9 @@ async def check_url(url: str, api_key: str | None) -> SafeBrowsingResult:
             result = SafeBrowsingResult(
                 status="error",
                 threats=[],
-                detail="Google Safe Browsing: timeout.",
+                detail="Google Safe Browsing: таймаут.",
             )
-            _cache_set(normalized, result)
+            _cache_set(normalized, result, ERROR_CACHE_TTL_SECONDS)
             return result
         except aiohttp.ClientError:
             if attempt == 0:
@@ -136,9 +143,9 @@ async def check_url(url: str, api_key: str | None) -> SafeBrowsingResult:
             result = SafeBrowsingResult(
                 status="error",
                 threats=[],
-                detail="Google Safe Browsing: network error.",
+                detail="Google Safe Browsing: ошибка сети.",
             )
-            _cache_set(normalized, result)
+            _cache_set(normalized, result, ERROR_CACHE_TTL_SECONDS)
             return result
 
         if status in {429, 503} and attempt == 0:
@@ -148,17 +155,17 @@ async def check_url(url: str, api_key: str | None) -> SafeBrowsingResult:
             result = SafeBrowsingResult(
                 status="error",
                 threats=[],
-                detail="Google Safe Browsing: access denied (403).",
+                detail="Google Safe Browsing: доступ запрещен (403).",
             )
-            _cache_set(normalized, result)
+            _cache_set(normalized, result, ERROR_CACHE_TTL_SECONDS)
             return result
         if status != 200:
             result = SafeBrowsingResult(
                 status="error",
                 threats=[],
-                detail=f"Google Safe Browsing: error {status}.",
+                detail=f"Google Safe Browsing: ошибка {status}.",
             )
-            _cache_set(normalized, result)
+            _cache_set(normalized, result, ERROR_CACHE_TTL_SECONDS)
             return result
 
         matches = data.get("matches", [])
@@ -166,7 +173,7 @@ async def check_url(url: str, api_key: str | None) -> SafeBrowsingResult:
             result = SafeBrowsingResult(
                 status="clean",
                 threats=[],
-                detail="Google Safe Browsing: threats not found.",
+                detail="Google Safe Browsing: угроз не найдено.",
             )
             _cache_set(normalized, result)
             return result
@@ -176,7 +183,7 @@ async def check_url(url: str, api_key: str | None) -> SafeBrowsingResult:
         result = SafeBrowsingResult(
             status="hit",
             threats=threats,
-            detail="Google Safe Browsing: threats found (" + label + ").",
+            detail="Google Safe Browsing: обнаружены угрозы (" + label + ").",
         )
         _cache_set(normalized, result)
         return result
@@ -184,7 +191,7 @@ async def check_url(url: str, api_key: str | None) -> SafeBrowsingResult:
     result = SafeBrowsingResult(
         status="error",
         threats=[],
-        detail="Google Safe Browsing: unknown error.",
+        detail="Google Safe Browsing: неизвестная ошибка.",
     )
-    _cache_set(normalized, result)
+    _cache_set(normalized, result, ERROR_CACHE_TTL_SECONDS)
     return result

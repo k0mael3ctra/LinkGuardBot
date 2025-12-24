@@ -87,6 +87,7 @@ python -m src.main
 - `/start` - старт
 - `/help` - список команд
 - `/check <url>` - анализ
+- `/deepcheck <url>` - углубленная проверка (urlscan.io)
 - `/tips` - советы
 - `/about` - как работает проверка
 - `/history` - последние проверки
@@ -138,6 +139,7 @@ git push -u origin main
 - urlscan.io (онлайн-анализ)
 
 Фиды кешируются локально в `data/feeds` и обновляются автоматически.
+`urlscan.io` запускается при высоком риске или по команде `/deepcheck`.
 
 ---
 
